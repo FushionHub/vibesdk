@@ -212,6 +212,24 @@ export class SessionService extends BaseService {
     }
     
     /**
+     * Get the creation timestamp of a session by ID, or null if not found.
+     * Used by sensitive flows (e.g. account linking) to enforce a session-age gate.
+     */
+    async getSessionCreatedAt(sessionId: string): Promise<Date | null> {
+        try {
+            const session = await this.db.db
+                .select({ createdAt: schema.sessions.createdAt })
+                .from(schema.sessions)
+                .where(eq(schema.sessions.id, sessionId))
+                .get();
+            return session?.createdAt ?? null;
+        } catch (error) {
+            logger.error('Error reading session createdAt', error);
+            return null;
+        }
+    }
+
+    /**
      * Get all active sessions for a user
      */
     async getUserSessions(userId: string): Promise<Array<{
@@ -320,6 +338,24 @@ export class SessionService extends BaseService {
             .get();
         
         return user?.email || '';
+    }
+
+    /**
+     * Look up a session row by its id (used for auth-time revocation checks)
+     */
+    async getSessionById(sessionId: string): Promise<schema.Session | null> {
+        try {
+            const session = await this.db.db
+                .select()
+                .from(schema.sessions)
+                .where(eq(schema.sessions.id, sessionId))
+                .get();
+
+            return session || null;
+        } catch (error) {
+            logger.error('Error fetching session by id', error);
+            return null;
+        }
     }
     
     /**

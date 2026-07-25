@@ -422,7 +422,20 @@ export class CodingAgentController extends BaseController {
                 return CodingAgentController.createErrorResponse<AgentPreviewResponse>('App not found', 404);
             }
 
-            // Check if app is public
+            // Visibility gate (intentional design — not an authorization gap):
+            //  - PRIVATE apps: owner-only (any non-owner gets 403 below).
+            //  - PUBLIC apps: any authenticated user may spin up an ephemeral
+            //    *sandbox* preview. This is deliberate: publishing is decoupled
+            //    from production deploy, and viewer-triggered previews are the
+            //    intended way to preview public apps that were never deployed.
+            //
+            // This action is SANDBOX-ONLY: deployToSandbox() never mutates the
+            // owner's production deploy state (deploymentId / dispatch worker),
+            // and the request passes through the global + per-user auth rate
+            // limiters. The credential-theft chain historically associated with
+            // this endpoint (reading .dev.vars via the sandbox control plane on
+            // port 3000) is closed in worker/services/sandbox/request-handler.ts,
+            // which blocks control-plane ports and verifies per-port tokens.
             if(appResult.visibility !== 'public') {
                 // If user is logged in and is the owner, allow preview deployment
                 const user = context.user;

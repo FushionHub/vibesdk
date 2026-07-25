@@ -71,6 +71,10 @@ export function setupAppRoutes(app: Hono<AppEnv>): void {
     
     // Generate git clone token for private repos - OWNER ONLY
     appRouter.post('/:id/git/token', setAuthLevel(AuthConfig.ownerOnly), adaptController(AppViewController, AppViewController.generateGitCloneToken));
+
+    // Generate owner-preview token so the owner can open a private deployed
+    // app's URL on a preview subdomain - OWNER ONLY
+    appRouter.post('/:id/preview-token', setAuthLevel(AuthConfig.ownerOnly), adaptController(AppViewController, AppViewController.generatePreviewToken));
     
     
     // Mount the app router under /api/apps

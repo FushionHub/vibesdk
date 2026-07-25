@@ -2,11 +2,36 @@
  * Centralized Authentication Utilities
  */
 
-import type {  AuthUser } from '../types/auth-types';
+import type {  AuthUser, SessionResponse } from '../types/auth-types';
 import type { User } from '../database/schema';
 import { createLogger } from '../logger';
+import { SecurityError, SecurityErrorType } from 'shared/types/errors';
 
 const logger = createLogger('AuthUtils');
+
+/**
+ * Enforce the deployment-level email allowlist (ALLOWED_EMAIL).
+ *
+ * Centralized admission gate: every authentication path that admits a user
+ * (register, login, OAuth callback, email verification, and any future path)
+ * must call this before creating a user or issuing a session. Comparison is
+ * case-insensitive on both sides.
+ */
+export function enforceAllowedEmail(
+	env: Env,
+	email: string,
+	action: 'register' | 'login' | 'oauth',
+): void {
+	const allowedEmail: string = env.ALLOWED_EMAIL;
+	if (!allowedEmail) return;
+	if (email.toLowerCase() !== allowedEmail.toLowerCase()) {
+		throw new SecurityError(
+			SecurityErrorType.UNAUTHORIZED,
+			`Email Whitelisting is enabled. Please use the allowed email to ${action}.`,
+			403,
+		);
+	}
+}
 
 /**
  * Extract sessionId from cookie
@@ -86,17 +111,11 @@ export function extractTokenWithMetadata(
 		}
 	}
 
-	// Priority 3: Query parameter (for WebSocket connections and special cases)
-	const url = new URL(request.url);
-	const queryToken =
-		url.searchParams.get('token') || url.searchParams.get('access_token');
-	if (queryToken && queryToken.length > 0) {
-		return {
-			token: queryToken,
-			method: TokenExtractionMethod.QUERY_PARAMETER,
-		};
-	}
-
+	// NOTE: JWTs are intentionally NOT accepted from the URL query string.
+	// URL components leak into access logs, browser history, Referer headers and
+	// error-reporting breadcrumbs, where a captured token would remain valid until
+	// its natural expiry. WebSocket handshakes use the one-time ticket flow instead
+	// (see worker/middleware/auth/ticketAuth.ts).
 	return { token: null };
 }
 
@@ -246,14 +265,7 @@ export function extractRequestMetadata(request: Request): RequestMetadata {
 	};
 }
 
-/**
- * Create session response
- */
-export interface SessionResponse {
-	user: AuthUser;
-    sessionId: string;
-    expiresAt: Date | null;
-}
+export type { SessionResponse } from '../types/auth-types';
 
 export function mapUserResponse(
 	user: (Partial<User> & { id: string; email: string }) | AuthUser,
@@ -309,9 +321,23 @@ export function validateRedirectUrl(redirectUrl: string, request: Request): stri
 			return null;
 		}
 
-		const forbiddenPaths = ['/api/auth/', '/logout', '/api/github-exporter/'];
+		// Block paths that themselves initiate privileged/auth-mutating flows. Notably
+		// `/oauth/` and `/auth/` (Cloudflare account linking) — without these, a post-login
+		// open-forward can chain straight into account linking.
+		const forbiddenPaths = ['/api/auth/', '/logout', '/api/github-exporter/', '/oauth/', '/auth/'];
 		if (forbiddenPaths.some(path => redirectUrlObj.pathname.startsWith(path))) {
 			logger.warn('Redirect URL rejected: forbidden path', {
+				redirectUrl,
+				pathname: redirectUrlObj.pathname
+			});
+			return null;
+		}
+
+		// Reject nested redirect parameters that could re-trigger another flow after this
+		// redirect resolves (e.g. /oauth/login?return_url=/settings smuggled via a path).
+		const nestedRedirectParams = ['return_url', 'redirect_url', 'continue'];
+		if (nestedRedirectParams.some(param => redirectUrlObj.searchParams.has(param))) {
+			logger.warn('Redirect URL rejected: nested redirect parameter', {
 				redirectUrl,
 				pathname: redirectUrlObj.pathname
 			});

@@ -39,6 +39,11 @@ export function setupAuthRoutes(app: Hono<AppEnv>): void {
 
     // SDK: exchange API key for short-lived access token
     authRouter.post('/exchange-api-key', setAuthLevel(AuthConfig.public), adaptController(AuthController, AuthController.exchangeApiKey));
+
+    // OAuth identity linking (authenticated) - must come before dynamic OAuth routes
+    authRouter.get('/identities', setAuthLevel(AuthConfig.authenticated), adaptController(AuthController, AuthController.getLinkedIdentities));
+    authRouter.delete('/identities/:provider', setAuthLevel(AuthConfig.authenticated), adaptController(AuthController, AuthController.unlinkProvider));
+    authRouter.get('/link/:provider', setAuthLevel(AuthConfig.authenticated), adaptController(AuthController, AuthController.initiateProviderLink));
     
     // OAuth routes (under /oauth path to avoid conflicts)
     authRouter.get('/oauth/:provider', setAuthLevel(AuthConfig.public), adaptController(AuthController, AuthController.initiateOAuth));

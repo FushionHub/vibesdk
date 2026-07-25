@@ -53,45 +53,42 @@ export class GitHubOAuthProvider extends BaseOAuthProvider {
                 name?: string;
                 avatar_url?: string;
             };
-            
-            // GitHub might not return email in user endpoint
-            let email = userData.email;
-            
-            if (!email) {
-                // Fetch email from emails endpoint
-                const emailsResponse = await fetch(this.emailsUrl, {
-                    headers: createGitHubHeaders(accessToken)
-                });
-                
-                if (emailsResponse.ok) {
-                    const emails = await emailsResponse.json() as Array<{
-                        email: string;
-                        verified: boolean;
-                        primary: boolean;
-                    }>;
-                    
-                    // Find primary email
-                    const primaryEmail = emails.find(e => e.primary);
-                    if (primaryEmail) {
-                        email = primaryEmail.email;
-                    } else if (emails.length > 0) {
-                        // Fallback to first verified email
-                        const verifiedEmail = emails.find(e => e.verified);
-                        email = verifiedEmail?.email || emails[0].email;
-                    }
-                }
+
+            // Always resolve the email via the /emails endpoint so the verification
+            // status of the selected email is known. The /user endpoint's `email`
+            // field does not carry a verified flag, so trusting it would force us to
+            // assume verification, which is exactly the takeover vector we must avoid.
+            const emailsResponse = await fetch(this.emailsUrl, {
+                headers: createGitHubHeaders(accessToken)
+            });
+
+            let chosen: { email: string; verified: boolean } | undefined;
+            if (emailsResponse.ok) {
+                const emails = await emailsResponse.json() as Array<{
+                    email: string;
+                    verified: boolean;
+                    primary: boolean;
+                }>;
+
+                // Prefer a verified primary email, then any verified email. Never fall
+                // back to an unverified address.
+                chosen = emails.find(e => e.primary && e.verified)
+                    ?? emails.find(e => e.verified);
             }
-            
+
+            // If the emails endpoint was unavailable but the profile carried an email,
+            // surface it as unverified so the auth layer can fail closed.
+            const email = chosen?.email ?? userData.email;
             if (!email) {
                 throw new Error('Could not retrieve user email from GitHub');
             }
-            
+
             return {
                 id: String(userData.id),
                 email,
                 name: userData.name || userData.login,
                 picture: userData.avatar_url,
-                emailVerified: true // GitHub verifies emails
+                emailVerified: chosen?.verified ?? false
             };
         } catch (error) {
             logger.error('Error getting user info', error);

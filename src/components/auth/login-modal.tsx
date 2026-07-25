@@ -9,6 +9,7 @@ import { X, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/auth-context';
+import CloudflareLogo from '@/assets/provider-logos/cloudflare.svg?react';
 // import {
 // 	validateEmail,
 // 	validatePassword,
@@ -20,14 +21,14 @@ interface LoginModalProps {
 	onClose: () => void;
 
 	// Original OAuth-only interface (for backward compatibility)
-	onLogin: (provider: 'google' | 'github') => void;
+	onLogin: (provider: 'google' | 'github' | 'cloudflare') => void;
 
 	// New enhanced interfaces (optional)
 	onEmailLogin?: (credentials: {
 		email: string;
 		password: string;
 	}) => Promise<void>;
-	onOAuthLogin?: (provider: 'google' | 'github', redirectUrl?: string) => void;
+	onOAuthLogin?: (provider: 'google' | 'github' | 'cloudflare', redirectUrl?: string) => void;
 	onRegister?: (data: {
 		email: string;
 		password: string;
@@ -55,7 +56,7 @@ export function LoginModal({
 	actionContext,
 	showCloseButton = true,
 }: LoginModalProps) {
-	const { authProviders, hasOAuth, requiresEmailAuth } = useAuth();
+	const { authProviders, hasOAuth } = useAuth();
 	const [mode, setMode] = useState<AuthMode>('login');
 	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
@@ -71,11 +72,15 @@ export function LoginModal({
 		Record<string, string>
 	>({});
 
-	// Determine if enhanced features are available
-	const hasEmailAuth = requiresEmailAuth && !!onEmailLogin;
-	const hasRegistration = requiresEmailAuth && !!onRegister;
+	// Determine if enhanced features are available. Email/password auth is offered
+	// whenever the backend reports the email provider is enabled, independently of
+	// whether any OAuth provider is also configured.
+	const emailAuthEnabled = authProviders?.email ?? true;
+	const hasEmailAuth = emailAuthEnabled && !!onEmailLogin;
+	const hasRegistration = emailAuthEnabled && !!onRegister;
 	const showGitHub = authProviders?.github && hasOAuth;
 	const showGoogle = authProviders?.google && hasOAuth;
+	const showCloudflare = authProviders?.cloudflare && hasOAuth;
 
 	const resetForm = () => {
 		setEmail('');
@@ -156,7 +161,7 @@ export function LoginModal({
 		}
 	};
 
-	const handleOAuthClick = (provider: 'google' | 'github') => {
+	const handleOAuthClick = (provider: 'google' | 'github' | 'cloudflare') => {
 		// Use the new interface if available, otherwise fall back to original
 		if (onOAuthLogin) {
 			// Pass the current URL as redirect URL for context preservation
@@ -195,7 +200,7 @@ export function LoginModal({
 								{showCloseButton && (
 									<button
 										onClick={handleClose}
-										className="absolute right-4 top-4 p-2 rounded-lg hover:bg-accent transition-colors"
+										className="absolute right-4 top-4 p-2 rounded-lg hover:bg-brand transition-colors"
 									>
 										<X className="h-4 w-4" />
 									</button>
@@ -309,6 +314,23 @@ export function LoginModal({
 										</span>
 									</div>
 									<div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-gray-100 dark:via-gray-800 to-transparent group-hover:translate-x-full transition-transform duration-700" />
+								</motion.button>
+								)}
+
+								{/* Cloudflare */}
+								{showCloudflare && (
+									<motion.button
+									whileTap={{ scale: 0.98 }}
+									onClick={() => handleOAuthClick('cloudflare')}
+									className="w-full group relative overflow-hidden rounded-xl bg-white dark:bg-bg-4 p-4 text-gray-800 dark:text-text-primary transition-all hover:bg-gray-50 dark:hover:bg-bg-4/80 border border-[#f48120]/40 disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									<div className="relative z-10 flex items-center justify-center gap-3">
+										<CloudflareLogo className="h-5 w-5" />
+										<span className="font-medium">
+											Continue with Cloudflare
+										</span>
+									</div>
+									<div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-[#f48120]/10 to-transparent group-hover:translate-x-full transition-transform duration-700" />
 								</motion.button>
 								)}
 

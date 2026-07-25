@@ -391,7 +391,8 @@ export abstract class BaseCodingBehavior<TState extends BaseProjectState>
         });
         this.broadcast(WebSocketMessageResponses.BLUEPRINT_UPDATED, {
             message: 'Blueprint updated',
-            updatedKeys: Object.keys(blueprint || {})
+            updatedKeys: Object.keys(blueprint || {}),
+            blueprint: blueprint as AgenticBlueprint | PhasicBlueprint,
         });
     }
 
@@ -859,7 +860,8 @@ export abstract class BaseCodingBehavior<TState extends BaseProjectState>
         
         this.broadcast(WebSocketMessageResponses.BLUEPRINT_UPDATED, {
             message: 'Blueprint updated',
-            updatedKeys: Object.keys(filtered)
+            updatedKeys: Object.keys(filtered),
+            blueprint: updated as AgenticBlueprint | PhasicBlueprint,
         });
         
         return updated;

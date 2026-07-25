@@ -18,6 +18,7 @@ describe('spacePreviewToken', () => {
 			spaceName: 'space-a',
 			branch: 'main',
 			userId: 'user-a',
+			previewVersion: 3,
 		});
 
 		const claims = await verifySpacePreviewToken(testEnv, token, 'space-a', 'main');
@@ -25,7 +26,24 @@ describe('spacePreviewToken', () => {
 			spaceName: 'space-a',
 			branch: 'main',
 			userId: 'user-a',
+			previewVersion: 3,
 		});
+	});
+
+	it('rejects a token missing previewVersion', async () => {
+		const jwt = JWTUtils.getInstance(testEnv);
+		const token = await jwt.signPayload(
+			{
+				spaceName: 'space-a',
+				branch: 'main',
+				userId: 'user-a',
+				purpose: 'space_preview',
+			},
+			60,
+		);
+
+		const claims = await verifySpacePreviewToken(testEnv, token, 'space-a', 'main');
+		expect(claims).toBeNull();
 	});
 
 	it('rejects token for a different space', async () => {
@@ -33,6 +51,7 @@ describe('spacePreviewToken', () => {
 			spaceName: 'space-a',
 			branch: 'main',
 			userId: 'user-a',
+			previewVersion: 0,
 		});
 
 		const claims = await verifySpacePreviewToken(testEnv, token, 'space-b', 'main');
@@ -44,6 +63,7 @@ describe('spacePreviewToken', () => {
 			spaceName: 'space-a',
 			branch: 'main',
 			userId: 'user-a',
+			previewVersion: 0,
 		});
 
 		const claims = await verifySpacePreviewToken(testEnv, token, 'space-a', 'feature');

@@ -17,6 +17,7 @@ import { selectSystemPrompt, PROMPT_MAX_STEPS } from './prompts';
 import { createThinkSkillSource } from './skills';
 import { createBrowserConsoleLogsTool } from './browser-logs-tool';
 import { createDeploySpaceTool } from './deploy-tool';
+import { createSetTitleTool } from './set-title-tool';
 
 /**
  * Per-instance configuration pushed into a {@link ThinkAgent} by the host
@@ -299,6 +300,8 @@ export class ThinkAgent extends Think<Env> {
 			delete: createDeleteTool({ ops }),
 			// Commit + deploy the SpaceDO branch so the preview rebuilds.
 			deploy_space: createDeploySpaceTool({ getStub: () => this.getSpaceStub() }),
+			// Set the project's short display title (host observes the output).
+			set_title: createSetTitleTool(),
 			// Client-side debugging via a real headless browser.
 			get_browser_console_logs: createBrowserConsoleLogsTool({
 				env: this.env,

@@ -15,6 +15,13 @@ import {
 	matchSpacePreviewParams,
 } from './api/handlers/space-preview';
 import { getAgentStub } from './agents';
+import { AppService } from './database/services/AppService';
+import {
+	buildOwnerPreviewCookie,
+	readOwnerPreviewCookie,
+	readOwnerPreviewTokenFromQuery,
+	verifyOwnerPreviewToken,
+} from './utils/ownerPreviewToken';
 
 // Durable Object and Service exports
 export { UserAppSandboxService } from './services/sandbox/sandboxSdkClient';
@@ -153,7 +160,45 @@ async function handleUserAppRequest(request: Request, env: Env): Promise<Respons
 	}
 
 	// Extract the app name (e.g., "xyz" from "xyz.build.cloudflare.dev").
+	// This subdomain equals the app's `deploymentId`.
 	const appName = subdomain;
+
+	// --- Visibility gate: private deployed apps are reachable by the owner only ---
+	// Consult the app's CURRENT visibility on every dispatch request (primary DB,
+	// no cache) so a public->private toggle takes effect within ~1s. Without this,
+	// toggling an app private still left the deployed worker URL publicly served.
+	const appService = new AppService(env);
+	const ownership = await appService.getAppOwnershipByDeploymentId(appName);
+	if (!ownership) {
+		// Fail closed: no owning app row for this deployment id.
+		logger.warn(`No app found for deployment '${appName}', refusing dispatch.`);
+		return new Response('This application is not currently available.', { status: 404 });
+	}
+
+	let ownerAuthedViaQuery = false;
+	if (ownership.visibility === 'private' && ownership.userId) {
+		// Owner access on preview subdomains: main-domain session cookies are not
+		// sent cross-subdomain, so accept a deployment-scoped owner-preview token
+		// (query param on first hit, then an HttpOnly subdomain cookie).
+		const queryToken = readOwnerPreviewTokenFromQuery(url);
+		const cookieToken = readOwnerPreviewCookie(request);
+
+		let ownerId: string | null = null;
+		if (queryToken) {
+			ownerId = await verifyOwnerPreviewToken(env, queryToken, appName);
+			if (ownerId) ownerAuthedViaQuery = true;
+		}
+		if (!ownerId && cookieToken) {
+			ownerId = await verifyOwnerPreviewToken(env, cookieToken, appName);
+		}
+
+		if (!ownerId || ownerId !== ownership.userId) {
+			// Indistinguishable from a non-existent app (do not confirm existence).
+			return new Response('This application is not currently available.', { status: 404 });
+		}
+	}
+	// public apps, anonymous apps (userId === null), and verified owners fall through.
+
 	const dispatcher = env['DISPATCHER'];
 
 	try {
@@ -167,6 +212,15 @@ async function handleUserAppRequest(request: Request, env: Env): Promise<Respons
         headers = setOriginControl(env, request, headers);
         headers.append('Vary', 'Origin');
 		headers.set('Access-Control-Expose-Headers', 'X-Preview-Type');
+
+		// Bootstrap the subdomain-scoped owner cookie so subsequent requests
+		// (iframe sub-resources, client fetches) don't need the query token.
+		if (ownerAuthedViaQuery) {
+			headers.append(
+				'Set-Cookie',
+				buildOwnerPreviewCookie({ token: readOwnerPreviewTokenFromQuery(url)!, secure: url.protocol === 'https:' }),
+			);
+		}
 
 		return new Response(dispatcherResponse.body, {
 			status: dispatcherResponse.status,

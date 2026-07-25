@@ -12,6 +12,7 @@ export enum SecurityErrorType {
     RATE_LIMITED = 'RATE_LIMITED',
     INVALID_INPUT = 'INVALID_INPUT',
     CSRF_VIOLATION = 'CSRF_VIOLATION',
+    CONFLICT = 'CONFLICT',
 }
 
 /**

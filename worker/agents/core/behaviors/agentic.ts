@@ -11,6 +11,7 @@ import { buildToolCallRenderer } from '../../operations/UserConversationProcesso
 import { PhaseGenerationOperation } from '../../operations/PhaseGeneration';
 import { FastCodeFixerOperation } from '../../operations/PostPhaseCodeFixer';
 import { customizeTemplateFiles, generateProjectName } from '../../utils/templateCustomizer';
+import { deriveShortTitle } from '../../utils/titleGenerator';
 import { IdGenerator } from '../../utils/idGenerator';
 import { generateNanoId } from '../../../utils/idGenerator';
 import { BaseCodingBehavior, BaseCodingOperations } from './base';
@@ -77,7 +78,7 @@ export class AgenticCodingBehavior extends BaseCodingBehavior<AgenticState> impl
             projectName,
             query,
             blueprint: {
-                title: baseName,
+                title: deriveShortTitle(baseName),
                 projectName,
                 description: query,
                 colorPalette: ['#1e1e1e'],

@@ -42,7 +42,7 @@ export function ViewHeader({
 					databaseAvailable={databaseAvailable}
 				/>
 			</div>
-			<div className="flex items-center justify-center">
+			<div className="flex min-w-0 items-center justify-center">
 				{centerContent}
 			</div>
 			<div className="flex items-center justify-end">

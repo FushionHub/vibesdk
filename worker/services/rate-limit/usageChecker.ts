@@ -7,6 +7,7 @@ import { getUserConfigurableSettings } from '../../config';
 import { canProceedWithRequest, type CanProceedResult } from 'shared/constants/limits';
 import { decryptTokens, encryptTokens, type EncryptedTokenData } from '../../utils/tokenEncryption';
 import { CloudflareAccountService } from '../cloudflare/CloudflareAccountService';
+import { UserService } from '../../database/services/UserService';
 import { readTokenCookie, buildTokenCookie, buildClearTokenCookie } from '../../utils/oauthCookie';
 import { CloudflareConnectOAuthProvider } from '../oauth/cloudflare-connect';
 import { createLogger } from '../../logger';
@@ -65,10 +66,12 @@ export function extractCloudflareToken(request: Request | undefined, env: Env): 
 
 /**
  * Check if Cloudflare limits feature is enabled
- * When disabled (default), users have unlimited access (self-deployed instances)
+ * When disabled (default), users have unlimited access (self-deployed instances).
+ * A missing CF_OAUTH_ENCRYPTION_KEY also disables the feature, since OAuth tokens
+ * cannot be encrypted/signed without it.
  */
 export function isCloudflareGatewayLimitsEnabled(env: Env): boolean {
-	return env.ENABLE_CLOUDFLARE_LIMITS === 'true';
+	return env.ENABLE_CLOUDFLARE_LIMITS === 'true' && !!env.CF_OAUTH_ENCRYPTION_KEY;
 }
 
 /**
@@ -180,6 +183,46 @@ export async function checkUsageAndBalance(
 		refreshedCookie,
 		refreshedBlob,
 	};
+}
+
+/**
+ * Resolve a usable Cloudflare access token from the request's HttpOnly cookie.
+ *
+ * Reuses the same decrypt/validate/refresh path as usage checking so callers
+ * (e.g. refreshing the account/gateway list on demand) get a live token without
+ * duplicating that logic. Returns a `refreshedCookie` the caller MUST echo as a
+ * `Set-Cookie` header when the token was transparently refreshed or when a bad
+ * cookie should be cleared.
+ */
+export async function resolveCloudflareAccessTokenFromRequest(
+	env: Env,
+	userId: string,
+	request: Request,
+): Promise<{ accessToken: string | null; refreshedCookie?: string }> {
+	if (!isCloudflareGatewayLimitsEnabled(env)) {
+		return { accessToken: null };
+	}
+
+	const blob = extractCloudflareToken(request, env);
+	if (!blob) {
+		return { accessToken: null };
+	}
+
+	const resolved = await resolveAccessToken(env, userId, blob, request);
+	if (resolved.accessToken) {
+		return {
+			accessToken: resolved.accessToken,
+			refreshedCookie: resolved.refreshedBlob
+				? buildTokenCookie(env, resolved.refreshedBlob)
+				: undefined,
+		};
+	}
+
+	if (resolved.clearCookie) {
+		return { accessToken: null, refreshedCookie: buildClearTokenCookie(env) };
+	}
+
+	return { accessToken: null };
 }
 
 /**
@@ -309,6 +352,11 @@ export async function getUserGateway(
 	userId: string
 ): Promise<{ accountId: string; gatewaySlug: string } | null> {
 	try {
+		// Respect the user's AI Gateway toggle: when disabled, fall back to the
+		// platform gateway even if the user has a gateway connected.
+		const { enabled } = await new UserService(env).getAiGatewayPreference(userId);
+		if (!enabled) return null;
+
 		const accountService = new CloudflareAccountService(env);
 		const selected = await accountService.getSelectedGatewayWithAccount(userId);
 
@@ -325,10 +373,17 @@ export async function getUserGateway(
 }
 
 /**
- * Check if user has configured Cloudflare account and gateway
+ * Check if user has a usable Cloudflare AI Gateway configured.
+ *
+ * Returns false when the user has disabled their AI Gateway toggle, so the
+ * platform (not the user's gateway/credits) is used and the Cloudflare-connected
+ * rate-limit bypass does not apply.
  */
 export async function hasCloudflareConfigured(env: Env, userId: string): Promise<boolean> {
 	try {
+		const { enabled } = await new UserService(env).getAiGatewayPreference(userId);
+		if (!enabled) return false;
+
 		const accountService = new CloudflareAccountService(env);
 		const selection = await accountService.getUserSelection(userId);
 		return !!(selection.accountId && selection.gatewayId);

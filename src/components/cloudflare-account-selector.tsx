@@ -8,11 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import CloudflareLogo from '@/assets/provider-logos/cloudflare.svg?react';
-import { Loader2, CheckCircle2, AlertCircle, MoreVertical, ExternalLink, LogOut } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, MoreVertical, ExternalLink, LogOut, RefreshCw } from 'lucide-react';
 import { useLimitsContext } from '@/contexts/limits-context';
 
 interface CloudflareAccount {
@@ -46,6 +47,7 @@ export function CloudflareAccountSelector() {
 	const [accounts, setAccounts] = useState<CloudflareAccount[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
+	const [refreshing, setRefreshing] = useState(false);
 	const [selectedAccountId, setSelectedAccountId] = useState<string>('');
 	const [selectedGatewayId, setSelectedGatewayId] = useState<string>('');
 	const [availableGateways, setAvailableGateways] = useState<Gateway[]>([]);
@@ -55,17 +57,53 @@ export function CloudflareAccountSelector() {
 	const { data: limitsData, refetch: refreshLimits } = useLimitsContext();
 	const isConnected = !!limitsData?.hasUserToken;
 
+	// AI Gateway usage toggle. Reflects the resolved server preference; updates optimistically.
+	const [aiGatewayEnabled, setAiGatewayEnabled] = useState<boolean>(false);
+	const [togglingGateway, setTogglingGateway] = useState(false);
+	useEffect(() => {
+		if (typeof limitsData?.aiGatewayEnabled === 'boolean') {
+			setAiGatewayEnabled(limitsData.aiGatewayEnabled);
+		}
+	}, [limitsData?.aiGatewayEnabled]);
+
+	const handleToggleAiGateway = async (next: boolean) => {
+		const previous = aiGatewayEnabled;
+		setAiGatewayEnabled(next);
+		setTogglingGateway(true);
+		try {
+			const response = await apiClient.setAiGatewayPreference(next);
+			if (response.success && response.data) {
+				setAiGatewayEnabled(response.data.enabled);
+			} else {
+				setAiGatewayEnabled(previous);
+			}
+			await refreshLimits?.();
+		} catch (error) {
+			console.error('Error updating AI Gateway preference:', error);
+			setAiGatewayEnabled(previous);
+		} finally {
+			setTogglingGateway(false);
+		}
+	};
+
 	// Fetch accounts and gateways
 	useEffect(() => {
 		fetchAccounts();
 	}, []);
 
-	const fetchAccounts = async () => {
+	const fetchAccounts = async ({ refresh = false }: { refresh?: boolean } = {}) => {
 		try {
-			setLoading(true);
-			const response = await fetch('/api/cloudflare/accounts', {
-				credentials: 'include',
-			});
+			if (refresh) {
+				setRefreshing(true);
+			} else {
+				setLoading(true);
+			}
+			const response = await fetch(
+				`/api/cloudflare/accounts${refresh ? '?refresh=true' : ''}`,
+				{
+					credentials: 'include',
+				},
+			);
 
 			if (!response.ok) {
 				throw new Error('Failed to fetch accounts');
@@ -108,7 +146,13 @@ export function CloudflareAccountSelector() {
 			toast.error('Failed to load Cloudflare accounts');
 		} finally {
 			setLoading(false);
+			setRefreshing(false);
 		}
+	};
+
+	const handleRefresh = async () => {
+		await fetchAccounts({ refresh: true });
+		toast.success('Refreshed Cloudflare accounts and gateways');
 	};
 
 	// Update available gateways when account changes
@@ -239,6 +283,18 @@ export function CloudflareAccountSelector() {
 							</div>
 						)}
 						{isConnected && (
+							<Button
+								variant="ghost"
+								size="icon"
+								className="h-7 w-7"
+								onClick={handleRefresh}
+								disabled={refreshing}
+								title="Refresh accounts and gateways"
+							>
+								<RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+							</Button>
+						)}
+						{isConnected && (
 							<DropdownMenu>
 								<DropdownMenuTrigger asChild>
 									<Button variant="ghost" size="icon" className="h-7 w-7">
@@ -274,7 +330,7 @@ export function CloudflareAccountSelector() {
 						<Button 
 							onClick={handleReconnect}
 							variant="outline"
-							className="w-full gap-2 border-[#f48120] text-[#f48120] bg-white dark:bg-transparent hover:bg-[#f48120]/10"
+							className="w-full gap-2 border-brand-primary text-brand-primary bg-white dark:bg-transparent hover:bg-brand-primary/10"
 						>
 							<CloudflareLogo className="w-4 h-4" />
 							Connect Cloudflare
@@ -282,6 +338,25 @@ export function CloudflareAccountSelector() {
 					</div>
 				) : (
 					<>
+						<div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+							<div className="space-y-0.5">
+								<Label htmlFor="ai-gateway-toggle" className="text-sm font-medium">
+									Use my AI Gateway
+								</Label>
+								<p className="text-xs text-muted-foreground">
+									When enabled, requests run through your Cloudflare AI Gateway and
+									use your own credits. When disabled, the platform's free tier and
+									limits apply.
+								</p>
+							</div>
+							<Switch
+								id="ai-gateway-toggle"
+								checked={aiGatewayEnabled}
+								disabled={togglingGateway}
+								onCheckedChange={handleToggleAiGateway}
+							/>
+						</div>
+
 						<div className="space-y-2">
 							<Label htmlFor="account-select">Cloudflare Account</Label>
 							<Select value={selectedAccountId || undefined} onValueChange={handleAccountChange}>

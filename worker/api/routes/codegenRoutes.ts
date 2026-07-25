@@ -30,6 +30,12 @@ export function setupCodegenRoutes(app: Hono<AppEnv>): void {
     // Only the app owner should be able to connect for editing purposes
     app.get('/api/agent/:agentId/connect', setAuthLevel(AuthConfig.ownerOnly), adaptController(CodingAgentController, CodingAgentController.connectToExistingAgent));
 
+    // Deploy an ephemeral SANDBOX preview. Intentionally `authenticated` (not
+    // `ownerOnly`): public-app previews must be viewer-triggerable, while
+    // private apps are owner-gated inside the controller. This is sandbox-only
+    // and never mutates production deploy state — see the rationale in
+    // CodingAgentController.deployPreview and the port-3000/token hardening in
+    // worker/services/sandbox/request-handler.ts.
     app.get('/api/agent/:agentId/preview', setAuthLevel(AuthConfig.authenticated), adaptController(CodingAgentController, CodingAgentController.deployPreview));
 
     // ========================================

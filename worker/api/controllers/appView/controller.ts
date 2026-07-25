@@ -8,11 +8,21 @@ import {
     AppDetailsData, 
     AppStarToggleData,
     GitCloneTokenData,
+    PreviewTokenData,
 } from './types';
 import { AgentSummary } from '../../../agents/core/types';
+import { toPublicAppDetail } from '../apps/publicAppDto';
 import { createLogger } from '../../../logger';
+import { RateLimitService } from '../../../services/rate-limit/rateLimits';
+import { RateLimitExceededError } from 'shared/types/errors';
+import { extractRequestMetadata } from '../../../utils/authUtils';
 import { buildUserWorkerUrl, buildGitCloneUrl } from 'worker/utils/urls';
 import { JWTUtils } from '../../../utils/jwtUtils';
+import {
+    OWNER_PREVIEW_QUERY_PARAM,
+    OWNER_PREVIEW_TOKEN_TTL_SECONDS,
+    signOwnerPreviewToken,
+} from '../../../utils/ownerPreviewToken';
 
 export class AppViewController extends BaseController {
     static logger = createLogger('AppViewController');
@@ -29,6 +39,15 @@ export class AppViewController extends BaseController {
             const user = await AppViewController.getOptionalUser(request, env);
             const userId = user?.id;
 
+            try {
+                await RateLimitService.enforcePublicAppsRateLimit(env, context.config.security.rateLimit, user ?? null, request);
+            } catch (error) {
+                if (error instanceof RateLimitExceededError) {
+                    return AppViewController.createErrorResponse<AppDetailsData>('Too many requests', 429);
+                }
+                throw error;
+            }
+
             // Get app details with stats using app service
             const appService = new AppService(env);
             const appResult = await appService.getAppDetails(appId, userId);
@@ -42,14 +61,18 @@ export class AppViewController extends BaseController {
                 return AppViewController.createErrorResponse<AppDetailsData>('App not found', 404);
             }
 
-            // Track view for all users (including owners and anonymous users)
+            // Track view for all users (including owners and anonymous users).
+            // Views are deduplicated per viewer per time bucket by AppService,
+            // so anonymous viewers are identified by request metadata rather
+            // than a unique-per-request token.
             if (userId) {
-                // Authenticated user view
-                await appService.recordAppView(appId, userId);
+                await appService.recordAppView(appId, { userId });
             } else {
-                // Anonymous user view - use a special anonymous identifier
-                // This could be enhanced with session tracking or IP-based deduplication
-                await appService.recordAppView(appId, 'anonymous-' + Date.now());
+                const metadata = extractRequestMetadata(request);
+                await appService.recordAppView(appId, {
+                    ipAddress: metadata.ipAddress,
+                    userAgent: metadata.userAgent,
+                });
             }
 
             // Try to fetch current agent state to get latest generated code
@@ -69,12 +92,17 @@ export class AppViewController extends BaseController {
 
             const cloudflareUrl = appResult.deploymentId ? buildUserWorkerUrl(env, appResult.deploymentId) : '';
 
+            // Only the owner may see operational fields (userId, deploymentId,
+            // private-repo GitHub URL). The prompt + generated code remain
+            // visible to all viewers of a public app (intended feature).
+            const isOwner = !!userId && appResult.userId === userId;
+
             const responseData: AppDetailsData = {
-                ...appResult, // Spread all EnhancedAppData fields including stats
+                ...toPublicAppDetail(appResult, isOwner),
                 cloudflareUrl: cloudflareUrl,
                 previewUrl: previewUrl || cloudflareUrl,
                 user: {
-                    id: appResult.userId!,
+                    id: isOwner ? appResult.userId! : '',
                     displayName: appResult.userName || 'Unknown',
                     avatarUrl: appResult.userAvatar
                 },
@@ -202,6 +230,61 @@ export class AppViewController extends BaseController {
         } catch (error) {
             this.logger.error('Error generating git clone token:', error);
             return AppViewController.createErrorResponse<GitCloneTokenData>('Failed to generate token', 500);
+        }
+    }
+
+    /**
+     * Generate a short-lived, deployment-scoped owner-preview token so the owner
+     * can open a PRIVATE deployed app's URL on a preview subdomain (where the
+     * main-domain session cookie is not sent).
+     * POST /api/apps/:id/preview-token  (OWNER ONLY)
+     */
+    static async generatePreviewToken(
+        _request: Request,
+        env: Env,
+        _ctx: ExecutionContext,
+        context: RouteContext
+    ): Promise<ControllerResponse<ApiResponse<PreviewTokenData>>> {
+        try {
+            const user = context.user!;
+            const appId = context.pathParams.id;
+
+            if (!appId) {
+                return AppViewController.createErrorResponse<PreviewTokenData>('App ID is required', 400);
+            }
+
+            const appService = new AppService(env);
+            const app = await appService.getAppDetails(appId, user.id);
+
+            if (!app) {
+                return AppViewController.createErrorResponse<PreviewTokenData>('App not found', 404);
+            }
+            if (app.userId !== user.id) {
+                return AppViewController.createErrorResponse<PreviewTokenData>('App not found', 404);
+            }
+            if (!app.deploymentId) {
+                return AppViewController.createErrorResponse<PreviewTokenData>('App is not deployed', 400);
+            }
+
+            const token = await signOwnerPreviewToken(env, {
+                userId: user.id,
+                deploymentId: app.deploymentId,
+            });
+
+            const base = buildUserWorkerUrl(env, app.deploymentId);
+            const previewUrl = `${base}/?${OWNER_PREVIEW_QUERY_PARAM}=${encodeURIComponent(token)}`;
+
+            const responseData: PreviewTokenData = {
+                token,
+                expiresIn: OWNER_PREVIEW_TOKEN_TTL_SECONDS,
+                expiresAt: new Date(Date.now() + OWNER_PREVIEW_TOKEN_TTL_SECONDS * 1000).toISOString(),
+                previewUrl,
+            };
+
+            return AppViewController.createSuccessResponse(responseData);
+        } catch (error) {
+            this.logger.error('Error generating preview token:', error);
+            return AppViewController.createErrorResponse<PreviewTokenData>('Failed to generate token', 500);
         }
     }
 

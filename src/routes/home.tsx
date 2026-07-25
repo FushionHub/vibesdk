@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { ArrowRight, Info } from 'react-feather';
 import { Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { useAuth } from '@/contexts/auth-context';
 import { ProjectModeSelector, type ProjectModeOption } from '../components/project-mode-selector';
 import { BehaviorModeToggle } from '../components/behavior-mode-toggle';
@@ -33,6 +33,23 @@ export default function Home() {
 	const handleConnectCloudflare = useCallback(() => {
 		window.location.href = `/oauth/login?return_url=${encodeURIComponent(window.location.href)}`;
 	}, []);
+
+	// Surface auth failures redirected here from the OAuth callback (e.g. an email
+	// that already belongs to an account created via a different method).
+	const [searchParams, setSearchParams] = useSearchParams();
+	useEffect(() => {
+		const authError = searchParams.get('error');
+		if (!authError) return;
+		const messages: Record<string, string> = {
+			email_exists:
+				'An account with this email already exists. Sign in with your existing method, then link the provider from Settings.',
+			oauth_failed: 'The sign-in provider reported an error. Please try again.',
+			auth_failed: 'Sign-in failed. Please try again.',
+		};
+		toast.error(messages[authError] ?? messages.auth_failed);
+		searchParams.delete('error');
+		setSearchParams(searchParams, { replace: true });
+	}, [searchParams, setSearchParams]);
 
 	const modeOptions = useMemo<ProjectModeOption[]>(() => {
 		if (isLoadingCapabilities || !capabilities) return [];
@@ -150,7 +167,7 @@ export default function Home() {
 	return (
 		<div className="relative flex flex-col items-center size-full">
 			{/* Dotted background pattern - extends to full viewport */}
-			<div className="fixed inset-0 text-accent z-0 opacity-20 pointer-events-none">
+			<div className="fixed inset-0 z-0 opacity-20 pointer-events-none" style={{ color: '#ff3d00' }}>
 				<svg width="100%" height="100%">
 					<defs>
 						<pattern
@@ -185,7 +202,7 @@ export default function Home() {
 							"px-6 p-8 flex flex-col items-center z-10",
 							discoverReady ? "mt-48" : "mt-[20vh] sm:mt-[24vh] md:mt-[28vh]"
 						)}>
-						<h1 className="text-shadow-sm text-shadow-red-200 dark:text-shadow-red-900 text-accent font-medium leading-[1.1] tracking-tight text-5xl w-full mb-4 bg-clip-text bg-gradient-to-r from-text-primary to-text-primary/90">
+						<h1 className="text-shadow-sm text-shadow-red-200 dark:text-shadow-red-900 font-medium leading-[1.1] tracking-tight text-5xl w-full mb-4 bg-clip-text bg-gradient-to-r from-text-primary to-text-primary/90" style={{ color: '#ff3d00' }}>
 							What should we build today?
 						</h1>
 						<PromptBox
@@ -239,8 +256,8 @@ export default function Home() {
 							exit={{ opacity: 0, y: -10 }}
 							className="w-full max-w-2xl px-6"
 						>
-							<div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-bg-4/50 dark:bg-bg-2/50 border border-accent/20 dark:border-accent/30 shadow-sm">
-								<Info className="size-4 text-accent flex-shrink-0 mt-0.5" />
+							<div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-bg-4/50 dark:bg-bg-2/50 shadow-sm" style={{ borderColor: 'rgba(255, 61, 0, 0.2)' }}>
+								<Info className="size-4 flex-shrink-0 mt-0.5" style={{ color: '#ff3d00' }} />
 								<p className="text-xs text-text-tertiary leading-relaxed">
 									<span className="font-medium text-text-secondary">Images Beta:</span> Images guide app layout and design but may not be replicated exactly. The coding agent cannot access images directly for app assets.
 								</p>
@@ -461,7 +478,7 @@ export const CurvedArrow: React.FC<ArrowProps> = ({
 
 			<path
 				d={d}
-				// stroke="var(--color-accent)"
+				// stroke="var(--color-brand)"
 				stroke="var(--color-text-tertiary)"
 				strokeOpacity={0.20}
 				strokeWidth={1.6}
@@ -475,7 +492,7 @@ export const CurvedArrow: React.FC<ArrowProps> = ({
 			<g filter="url(#discover-squiggle)">
 				<path
 					d={d}
-					// stroke="var(--color-accent)"
+					// stroke="var(--color-brand)"
 					stroke="var(--color-text-tertiary)"
 					strokeOpacity={0.12}
 					strokeWidth={1}

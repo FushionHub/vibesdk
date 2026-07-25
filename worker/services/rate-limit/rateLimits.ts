@@ -147,6 +147,95 @@ export class RateLimitService {
         }
     }
 
+    /**
+     * Per-client limit for the unauthenticated public app discovery endpoints
+     * (listing + detail). Layered on top of the global API limiter to make
+     * bulk-harvest / scan attacks more expensive. Throws RateLimitExceededError
+     * when the limit is exceeded.
+     */
+    static async enforcePublicAppsRateLimit(
+        env: Env,
+        config: RateLimitSettings,
+        user: AuthUser | null,
+        request: Request
+    ): Promise<void> {
+        if (!config[RateLimitType.PUBLIC_APPS].enabled) {
+            return;
+        }
+        const identifier = await this.getUniversalIdentifier(user, request);
+
+        const key = this.buildRateLimitKey(RateLimitType.PUBLIC_APPS, identifier);
+
+        try {
+            const result = await this.enforce(env, key, config, RateLimitType.PUBLIC_APPS);
+            if (!result.success) {
+                this.logger.warn('Public apps rate limit exceeded', {
+                    identifier,
+                    key,
+                    userAgent: request.headers.get('User-Agent'),
+                    ip: request.headers.get('CF-Connecting-IP')
+                });
+                captureSecurityEvent('rate_limit_exceeded', {
+                    limitType: RateLimitType.PUBLIC_APPS,
+                    identifier,
+                    key,
+                    userAgent: request.headers.get('User-Agent') || undefined,
+                    ip: request.headers.get('CF-Connecting-IP') || undefined,
+                });
+                throw new RateLimitExceededError(`Public apps rate limit exceeded`, RateLimitType.PUBLIC_APPS);
+            }
+        } catch (error) {
+            if (error instanceof RateLimitExceededError || error instanceof SecurityError) {
+                throw error;
+            }
+            this.logger.error('Failed to enforce public apps rate limit', error);
+        }
+    }
+
+    /**
+     * Per-preview-token rate limit for SpaceDO previews. These are dispatched
+     * outside the Hono chain (via handleSpacePreview -> SpaceDO stub.fetch), so
+     * the global API limiter never runs. `tokenId` should be an opaque,
+     * non-reversible identifier for the preview token (e.g. a hash), never the
+     * raw token. Throws RateLimitExceededError when the limit is exceeded.
+     */
+    static async enforceSpacePreviewRateLimit(
+        env: Env,
+        config: RateLimitSettings,
+        tokenId: string,
+        request: Request
+    ): Promise<void> {
+        if (!config[RateLimitType.SPACE_PREVIEW].enabled) {
+            return;
+        }
+        const identifier = `preview:${tokenId}`;
+        const key = this.buildRateLimitKey(RateLimitType.SPACE_PREVIEW, identifier);
+
+        try {
+            const result = await this.enforce(env, key, config, RateLimitType.SPACE_PREVIEW);
+            if (!result.success) {
+                this.logger.warn('Space preview rate limit exceeded', {
+                    key,
+                    userAgent: request.headers.get('User-Agent'),
+                    ip: request.headers.get('CF-Connecting-IP'),
+                });
+                captureSecurityEvent('rate_limit_exceeded', {
+                    limitType: RateLimitType.SPACE_PREVIEW,
+                    identifier,
+                    key,
+                    userAgent: request.headers.get('User-Agent') || undefined,
+                    ip: request.headers.get('CF-Connecting-IP') || undefined,
+                });
+                throw new RateLimitExceededError(`Space preview rate limit exceeded`, RateLimitType.SPACE_PREVIEW);
+            }
+        } catch (error) {
+            if (error instanceof RateLimitExceededError || error instanceof SecurityError) {
+                throw error;
+            }
+            this.logger.error('Failed to enforce space preview rate limit', error);
+        }
+    }
+
     static async enforceAuthRateLimit(
         env: Env,
         config: RateLimitSettings,

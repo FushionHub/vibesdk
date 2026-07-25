@@ -43,6 +43,27 @@
       "when": 1777015990625,
       "tag": "0005_cloudflare_oauth_connect",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1783335505960,
+      "tag": "0006_gigantic_shinko_yamashiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1783593382020,
+      "tag": "0007_violet_nebula",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1784039913365,
+      "tag": "0006_puzzling_bloodstrike",
+      "breakpoints": true
     }
   ]
 }

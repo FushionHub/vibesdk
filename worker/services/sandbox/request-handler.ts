@@ -22,6 +22,14 @@ export interface RouteInfo {
   token: string;
 }
 
+/**
+ * Control-plane / internal ports that must never be reachable through a public
+ * preview subdomain. The user-app dev server runs on other ports; the sandbox
+ * management API (file read/exec) lives on 3000 and is only meant to be reached
+ * internally via DO RPC / containerFetch, never from the public host.
+ */
+const CONTROL_PLANE_PORTS = new Set<number>([3000, 8787]);
+
 export async function proxyToSandbox<E extends SandboxEnv>(
   request: Request,
   env: E
@@ -34,31 +42,39 @@ export async function proxyToSandbox<E extends SandboxEnv>(
       return null; // Not a request to an exposed container port
     }
 
-    const { sandboxId, port, path, token } = routeInfo;
+    const { sandboxId, port, path } = routeInfo;
+    // NOTE: id-resolution must match how the sandbox was created
+    // (`getSandbox(env.Sandbox, sandboxId)` with no options in
+    // sandboxSdkClient.ts). Do NOT add `{ normalizeId: true }` here or
+    // `validatePortToken` would hit a different DO instance with no stored
+    // tokens and reject every legitimate preview.
     const sandbox = getSandbox(env.Sandbox, sandboxId);
 
-    logger.info("[Proxy] Sandbox", sandbox, "Port", port, "Path", path, "Token", token);
+    // Never expose the control plane / reserved ports through public routing.
+    if (CONTROL_PLANE_PORTS.has(port)) {
+      logger.warn('Blocked control-plane port access', { sandboxId, port, path });
+      return new Response('Not found', { status: 404 });
+    }
+
+    // Verify the per-port token against the token stored in the Sandbox DO by
+    // `exposePort()`. Anyone who merely knows a (sandboxId, port) pair but not
+    // the issued token gets a 404 (indistinguishable from a missing sandbox).
+    if (!(await sandbox.validatePortToken(port, routeInfo.token))) {
+      logger.warn('Blocked invalid sandbox port token', { sandboxId, port, path });
+      return new Response('Not found', { status: 404 });
+    }
 
     // Detect WebSocket upgrade request
     const upgradeHeader = request.headers.get('Upgrade');
     if (upgradeHeader?.toLowerCase() === 'websocket') {
-      logger.info("[Proxy] WebSocket upgrade request", upgradeHeader, "Port", port, "Path", path, "Token", token);
+      logger.info('[Proxy] WebSocket upgrade request', { sandboxId, port, path });
       // WebSocket path: Must use fetch() not containerFetch()
       // This bypasses JSRPC serialization boundary which cannot handle WebSocket upgrades
       return await sandbox.fetch(switchPort(request, port));
     }
 
-    // Build proxy request with proper headers
-    let proxyUrl: string;
-
-    // Route based on the target port
-    if (port !== 3000) {
-      // Route directly to user's service on the specified port
-      proxyUrl = `http://localhost:${port}${path}${url.search}`;
-    } else {
-      // Port 3000 is our control plane - route normally
-      proxyUrl = `http://localhost:3000${path}${url.search}`;
-    }
+    // Route directly to user's service on the specified port
+    const proxyUrl = `http://localhost:${port}${path}${url.search}`;
 
     const proxyRequest = new Request(proxyUrl, {
       method: request.method,
@@ -78,7 +94,6 @@ export async function proxyToSandbox<E extends SandboxEnv>(
       sandboxId,
       port,
       path,
-      token,
       proxyUrl,
     });
 
@@ -108,6 +123,13 @@ function extractSandboxRoute(url: URL): RouteInfo | null {
   const token = subdomainMatch[3]; // Mandatory token
 
   const port = parseInt(portStr, 10);
+
+  // Reject malformed / out-of-range ports at parse time (mirrors the SDK's
+  // validatePort range check). Reserved control-plane ports (3000/8787) are
+  // still parsed here so proxyToSandbox can return an explicit 404 for them.
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    return null;
+  }
 
   // DNS subdomain length limit is 63 characters
   if (sandboxId.length > 63) {

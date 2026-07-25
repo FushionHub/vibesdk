@@ -53,6 +53,8 @@ export enum RateLimitType {
 	AUTH_RATE_LIMIT = 'authRateLimit',
 	APP_CREATION = 'appCreation',
 	LLM_CALLS = 'llmCalls',
+	PUBLIC_APPS = 'publicApps',
+	SPACE_PREVIEW = 'spacePreview',
 }
 
 export interface RateLimitSettings {
@@ -60,6 +62,8 @@ export interface RateLimitSettings {
 	[RateLimitType.AUTH_RATE_LIMIT]: RLRateLimitConfig;
 	[RateLimitType.APP_CREATION]: DORateLimitConfig | KVRateLimitConfig;
 	[RateLimitType.LLM_CALLS]: LLMCallsRateLimitConfig;
+	[RateLimitType.PUBLIC_APPS]: DORateLimitConfig | KVRateLimitConfig;
+	[RateLimitType.SPACE_PREVIEW]: DORateLimitConfig | KVRateLimitConfig;
 }
 
 export const DEFAULT_RATE_LIMIT_SETTINGS: RateLimitSettings = {
@@ -89,5 +93,26 @@ export const DEFAULT_RATE_LIMIT_SETTINGS: RateLimitSettings = {
 		excludeBYOKUsers: true,
 		// Connected users still consume the free daily allotment first; only BYOK (actively-billing) users skip limits.
 		excludeCloudflareConnected: false,
+	},
+	// Per-client limit for the unauthenticated public app discovery endpoints
+	// (listing + detail). DO-based so it works locally and needs no binding.
+	publicApps: {
+		enabled: true,
+		store: RateLimitStore.DURABLE_OBJECT,
+		limit: 120,
+		period: 60, // 120 requests / minute per client
+		burst: 40,
+		burstWindow: 10,
+	},
+	// Per-preview-token limit for SpaceDO previews (dispatched outside the Hono
+	// chain, so the global API limiter does not apply). Generous enough for a
+	// legitimate page's asset sub-requests while capping sustained floods.
+	spacePreview: {
+		enabled: true,
+		store: RateLimitStore.DURABLE_OBJECT,
+		limit: 600,
+		period: 60, // 600 requests / minute per preview token
+		burst: 120,
+		burstWindow: 10,
 	},
 };

@@ -113,6 +113,31 @@ export function DeploymentControls({
 		onDeploy(instanceId);
 	};
 
+	const handleViewLive = async () => {
+		if (!deploymentUrl) return;
+
+		// Public apps (or missing appId): open the deployed URL directly.
+		if (localVisibility !== 'private' || !appId) {
+			window.open(deploymentUrl, '_blank');
+			return;
+		}
+
+		// Private apps are gated at the dispatch layer, so mint a short-lived,
+		// deployment-scoped owner-preview token and open the tokenized URL.
+		try {
+			const response = await apiClient.generatePreviewToken(appId);
+			if (response.success && response.data) {
+				window.open(response.data.previewUrl, '_blank');
+				return;
+			}
+		} catch (error) {
+			console.error('Failed to generate owner preview token:', error);
+		}
+
+		// Fallback: attempt the raw URL.
+		window.open(deploymentUrl, '_blank');
+	};
+
 	const handleToggleVisibility = async () => {
 		if (!appId) {
 			toast.error('App ID not found');
@@ -164,8 +189,8 @@ export function DeploymentControls({
 			
 			case DeploymentState.READY_TO_DEPLOY:
 				return {
-					panelClass: "bg-accent/5 dark:bg-accent/10 border-accent/20 dark:border-accent/20",
-					iconClass: "bg-accent border-accent",
+					panelClass: "bg-brand/5 dark:bg-brand/10 border-brand/20 dark:border-brand/20",
+					iconClass: "bg-brand border-brand",
 					icon: <Zap className="w-2.5 h-2.5 text-white" />,
 					titleColor: "text-text-primary dark:text-text-primary",
 					subtitleColor: "text-text-tertiary dark:text-text-tertiary",
@@ -173,7 +198,7 @@ export function DeploymentControls({
 					subtitle: "It's Free! Deploys to Cloudflare Workers for Platform",
 					buttonDisabled: false,
 					buttonVariant: "primary" as const,
-					buttonClass: "bg-accent text-white border-orange-500 dark:border-orange-600 hover:scale-105"
+					buttonClass: "bg-brand text-white border-orange-500 dark:border-orange-600 hover:scale-105"
 				};
 			
 			case DeploymentState.DEPLOYING:
@@ -331,19 +356,19 @@ export function DeploymentControls({
 
 					{/* Shareable Link - Only shown when app is public */}
 					{localVisibility === 'public' && appId && (
-						<div className="bg-accent/5 border border-accent/20 rounded-md p-3 mb-3">
-							<div className="text-xs text-accent font-medium mb-1 flex items-center gap-1">
+						<div className="bg-brand/5 border border-brand/20 rounded-md p-3 mb-3">
+							<div className="text-xs text-brand font-medium mb-1 flex items-center gap-1">
 								<Share2 className="w-3 h-3" />
 								Shareable Link:
 							</div>
 							<div className="flex items-center gap-2">
-								<code className="flex-1 text-sm font-mono text-accent bg-accent/5 px-2 py-1 rounded text-ellipsis overflow-hidden">
+								<code className="flex-1 text-sm font-mono text-brand bg-brand/5 px-2 py-1 rounded text-ellipsis overflow-hidden">
 									{window.location.origin}/app/{appId}
 								</code>
 								<Button
 									onClick={() => copyLink(`${window.location.origin}/app/${appId}`)}
 									variant="secondary"
-									className="h-7 px-2 text-xs bg-accent/10 border border-accent/30 text-accent hover:bg-accent/20 transition-all flex-shrink-0"
+									className="h-7 px-2 text-xs bg-brand/10 border border-brand/30 text-brand hover:bg-brand/20 transition-all flex-shrink-0"
 								>
 									{linkCopied ? 'Copied!' : 'Copy Link'}
 								</Button>
@@ -358,7 +383,7 @@ export function DeploymentControls({
 					)}>
 						{/* View Live Site Button */}
 						<Button
-							onClick={() => deploymentUrl && window.open(deploymentUrl, '_blank')}
+							onClick={handleViewLive}
 							variant="primary"
 							className="h-10 text-sm bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800 text-white border-green-600 dark:border-green-700 font-medium shadow-sm hover:shadow-md dark:hover:shadow-green-900/50 transition-all duration-200 hover:scale-[1.02]"
 						>
@@ -375,7 +400,7 @@ export function DeploymentControls({
 								className={clsx(
 									"h-10 text-sm font-medium transition-all duration-200 shadow-sm",
 									localVisibility === 'private'
-										? "bg-accent hover:bg-accent/90 text-white border-accent hover:shadow-md hover:scale-[1.02]"
+										? "bg-brand hover:bg-brand/90 text-white border-brand hover:shadow-md hover:scale-[1.02]"
 										: "bg-bg-3 hover:bg-bg-4 text-text-primary border-border-primary hover:shadow-sm hover:scale-[1.02]"
 								)}
 							>

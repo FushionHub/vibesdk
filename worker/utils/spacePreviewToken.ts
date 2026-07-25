@@ -8,6 +8,12 @@ export interface SpacePreviewClaims {
 	spaceName: string;
 	branch: string;
 	userId: string;
+	/**
+	 * The app's `previewVersion` at mint time. Compared against the app's
+	 * current value at preview time so a visibility toggle (which bumps the
+	 * version) revokes this token.
+	 */
+	previewVersion: number;
 }
 
 export async function signSpacePreviewToken(
@@ -31,11 +37,13 @@ export async function verifySpacePreviewToken(
 	if (typeof payload.spaceName !== 'string' || payload.spaceName !== expectedSpaceName) return null;
 	if (typeof payload.branch !== 'string' || payload.branch !== expectedBranch) return null;
 	if (typeof payload.userId !== 'string' || payload.userId.trim() === '') return null;
+	if (typeof payload.previewVersion !== 'number' || !Number.isFinite(payload.previewVersion)) return null;
 
 	return {
 		spaceName: payload.spaceName,
 		branch: payload.branch,
 		userId: payload.userId,
+		previewVersion: payload.previewVersion,
 	};
 }
 

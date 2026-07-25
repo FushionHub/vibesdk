@@ -1,4 +1,4 @@
-import type { CodeReviewOutputType, FileConceptType, FileOutputType } from "../agents/schemas";
+import type { Blueprint, CodeReviewOutputType, FileConceptType, FileOutputType } from "../agents/schemas";
 import type { AgentState } from "../agents/core/state";
 import type { ConversationState } from "../agents/inferutils/common";
 import type { CodeIssue, RuntimeError, StaticAnalysisResponse, TemplateDetails } from "../services/sandbox/sandboxTypes";
@@ -359,6 +359,7 @@ type BlueprintUpdatedMessage = {
 	type: 'blueprint_updated';
 	message: string;
 	updatedKeys: string[];
+	blueprint?: Blueprint;
 };
 
 type BlueprintChunkMessage = {

@@ -1,12 +1,30 @@
-import { describe, expect, it } from 'vitest';
-import { handleSpacePreview } from './space-preview';
-import {
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The handler reads the app's current previewVersion via AppService. The test
+// env has no D1 binding, so mock it with a controllable value (bumping it
+// simulates a visibility toggle). This also avoids loading AppService's heavy
+// DB dependencies in the worker test isolate.
+let currentPreviewVersion = 0;
+vi.mock('../../database/services/AppService', () => ({
+	AppService: class {
+		async getPreviewVersion() {
+			return currentPreviewVersion;
+		}
+	},
+}));
+
+const { handleSpacePreview } = await import('./space-preview');
+const {
 	buildPreviewCookie,
 	signSpacePreviewToken,
 	SPACE_PREVIEW_COOKIE_NAME,
-} from '../../utils/spacePreviewToken';
+} = await import('../../utils/spacePreviewToken');
 
 const JWT_SECRET = 'test-secret-for-space-preview-token-validation-1234567890';
+
+beforeEach(() => {
+	currentPreviewVersion = 0;
+});
 
 type HandlerEnv = Parameters<typeof handleSpacePreview>[1];
 
@@ -53,6 +71,7 @@ describe('handleSpacePreview', () => {
 			spaceName: 'space-a',
 			branch: 'main',
 			userId: 'user-a',
+			previewVersion: 0,
 		});
 
 		const res = await handleSpacePreview(previewRequest(token), env, 'space-a', 'main');
@@ -70,6 +89,7 @@ describe('handleSpacePreview', () => {
 			spaceName: 'space-a',
 			branch: 'main',
 			userId: 'user-a',
+			previewVersion: 0,
 		});
 		const cookie = buildPreviewCookie({
 			token,
@@ -100,10 +120,32 @@ describe('handleSpacePreview', () => {
 			spaceName: 'space-a',
 			branch: 'feature',
 			userId: 'user-a',
+			previewVersion: 0,
 		});
 
 		const res = await handleSpacePreview(previewRequest(token), env, 'space-a', 'main');
 		expect(res.status).toBe(401);
+	});
+
+	it('rejects a token after the app previewVersion is bumped (visibility toggle)', async () => {
+		const env = makeEnv();
+		const token = await signSpacePreviewToken(env, {
+			spaceName: 'space-a',
+			branch: 'main',
+			userId: 'user-a',
+			previewVersion: 0,
+		});
+
+		// Minted at version 0 — accepted while the app is still at version 0.
+		expect(
+			(await handleSpacePreview(previewRequest(token), env, 'space-a', 'main')).status,
+		).toBe(200);
+
+		// A visibility toggle bumps previewVersion; the same token is now stale.
+		currentPreviewVersion = 1;
+		expect(
+			(await handleSpacePreview(previewRequest(token), env, 'space-a', 'main')).status,
+		).toBe(401);
 	});
 
 	it('on a separate preview domain, sets a partitioned cookie and strips ?t= before forwarding', async () => {
@@ -113,6 +155,7 @@ describe('handleSpacePreview', () => {
 			spaceName: 'space-a',
 			branch: 'main',
 			userId: 'user-a',
+			previewVersion: 0,
 		});
 
 		const res = await handleSpacePreview(previewRequest(token), env, 'space-a', 'main');

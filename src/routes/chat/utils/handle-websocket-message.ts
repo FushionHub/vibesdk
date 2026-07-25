@@ -425,6 +425,16 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
                 break;
             }
 
+            case 'blueprint_updated': {
+                // Live-refresh the blueprint (drives the preview header title and
+                // the blueprint panel) when the agent updates it, e.g. Think's
+                // `set_title` tool or agentic `generate_blueprint`/`alter_blueprint`.
+                if (message.blueprint) {
+                    setBlueprint(message.blueprint);
+                }
+                break;
+            }
+
             case 'conversation_state': {
                 if (message.type !== 'conversation_state') break;
                 const { state, deepDebugSession } = message;

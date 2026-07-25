@@ -185,7 +185,7 @@ export function MainContentPanel(props: MainContentPanelProps) {
 			<Suspense
 				fallback={
 					<div className="flex-1 w-full h-full flex items-center justify-center bg-bg-3">
-						<RefreshCw className="size-6 text-accent animate-spin" />
+						<RefreshCw className="size-6 text-brand animate-spin" />
 					</div>
 				}
 			>
@@ -268,14 +268,19 @@ export function MainContentPanel(props: MainContentPanelProps) {
 		);
 
 		return renderViewWithHeader(
-			<div className="flex items-center gap-2">
-				<span className="text-sm font-mono text-text-50/70">
+			<div className="flex min-w-0 items-center gap-2">
+				<span
+					className="truncate text-sm font-mono text-text-50/70"
+					title={previewTitle}
+				>
 					{previewTitle}
 				</span>
-				<Copy text={previewUrl} />
+				<span className="shrink-0">
+					<Copy text={previewUrl} />
+				</span>
 				{showManualRefresh && (
 					<button
-						className="p-1 hover:bg-bg-2 rounded transition-colors"
+						className="shrink-0 p-1 hover:bg-bg-2 rounded transition-colors"
 						onClick={onManualRefresh}
 						title="Refresh preview"
 					>

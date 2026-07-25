@@ -36,6 +36,10 @@ export const users = sqliteTable('users', {
     preferences: text('preferences', { mode: 'json' }).default('{}'),
     theme: text('theme', { enum: ['light', 'dark', 'system'] }).default('system'),
     timezone: text('timezone').default('UTC'),
+    // Whether the user's own Cloudflare AI Gateway should be used for inference.
+    // Nullable on purpose: null means "use the derived default" (off for users who
+    // signed in with Cloudflare, on for everyone else who explicitly connected).
+    aiGatewayEnabled: integer('ai_gateway_enabled', { mode: 'boolean' }),
     
     // Account Status
     isActive: integer('is_active', { mode: 'boolean' }).default(true),
@@ -56,6 +60,31 @@ export const users = sqliteTable('users', {
     lockedUntilIdx: index('users_locked_until_idx').on(table.lockedUntil),
     isActiveIdx: index('users_is_active_idx').on(table.isActive),
     lastActiveAtIdx: index('users_last_active_at_idx').on(table.lastActiveAt),
+}));
+
+/**
+ * User OAuth Identities table - Links multiple OAuth provider identities to a
+ * single user. Login resolves by (provider, providerId) here rather than by
+ * email, which prevents cross-provider account takeover via email collision.
+ */
+export const userOauthIdentities = sqliteTable('user_oauth_identities', {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+
+    // Provider identity
+    provider: text('provider').notNull(), // 'github', 'google', 'cloudflare'
+    providerId: text('provider_id').notNull(),
+
+    // Provider-reported email at link/login time (for display and auditing)
+    email: text('email'),
+    emailVerified: integer('email_verified', { mode: 'boolean' }).default(false),
+
+    // Metadata
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    providerIdx: uniqueIndex('user_oauth_identities_provider_unique_idx').on(table.provider, table.providerId),
+    userIdx: index('user_oauth_identities_user_idx').on(table.userId),
 }));
 
 /**
@@ -169,6 +198,11 @@ export const apps = sqliteTable('apps', {
     // Versioning (for future support)
     version: integer('version').default(1),
     parentAppId: text('parent_app_id'), // If forked from another app
+
+    // Preview-token revocation epoch. Incremented on every visibility change so
+    // outstanding space-preview tokens (which embed the value at mint) are
+    // rejected after a public->private toggle.
+    previewVersion: integer('preview_version').notNull().default(0),
     
     // Screenshot Information
     screenshotUrl: text('screenshot_url'), // URL to saved screenshot image
@@ -304,6 +338,12 @@ export const appViews = sqliteTable('app_views', {
     userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }), // Null for anonymous
     sessionToken: text('session_token'), // For anonymous tracking
     ipAddressHash: text('ip_address_hash'), // Hashed IP for privacy
+    // Stable per-viewer, per-time-bucket identity used to deduplicate views so
+    // a single client cannot arbitrarily inflate view counts. For authenticated
+    // viewers derived from the user id; for anonymous viewers from a hash of
+    // ip + user-agent + appId. Combined with the unique index below and an
+    // upsert on insert, this bounds how fast counts can grow.
+    viewerHash: text('viewer_hash'),
     
     // View Context
     referrer: text('referrer'),
@@ -318,6 +358,7 @@ export const appViews = sqliteTable('app_views', {
     userIdx: index('app_views_user_idx').on(table.userId),
     viewedAtIdx: index('app_views_viewed_at_idx').on(table.viewedAt),
     appViewedAtIdx: index('app_views_app_viewed_at_idx').on(table.appId, table.viewedAt),
+    appViewerIdx: uniqueIndex('app_views_app_viewer_idx').on(table.appId, table.viewerHash),
 }));
 
 // ========================================
@@ -361,7 +402,7 @@ export const authAttempts = sqliteTable('auth_attempts', {
     id: integer('id').primaryKey({ autoIncrement: true }),
     identifier: text('identifier').notNull(),
     attemptType: text('attempt_type', { 
-        enum: ['login', 'register', 'oauth_google', 'oauth_github', 'refresh', 'reset_password'] 
+        enum: ['login', 'register', 'oauth_google', 'oauth_github', 'oauth_cloudflare', 'refresh', 'reset_password'] 
     }).notNull(),
     success: integer('success', { mode: 'boolean' }).notNull(),
     ipAddress: text('ip_address').notNull(),
@@ -603,6 +644,9 @@ export type NewAppView = typeof appViews.$inferInsert;
 
 export type OAuthState = typeof oauthStates.$inferSelect;
 export type NewOAuthState = typeof oauthStates.$inferInsert;
+
+export type UserOauthIdentity = typeof userOauthIdentities.$inferSelect;
+export type NewUserOauthIdentity = typeof userOauthIdentities.$inferInsert;
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type NewSystemSetting = typeof systemSettings.$inferInsert;

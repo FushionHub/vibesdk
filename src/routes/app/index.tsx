@@ -101,6 +101,9 @@ export default function AppView() {
 	const [isDeleting, setIsDeleting] = useState(false);
 	const [isGitCloneModalOpen, setIsGitCloneModalOpen] = useState(false);
 	const [activeFilePath, setActiveFilePath] = useState<string>();
+	// For a PRIVATE deployed app, the owner needs a deployment-scoped token to
+	// open the preview subdomain (main-domain session cookies aren't sent there).
+	const [ownerPreviewUrl, setOwnerPreviewUrl] = useState<string | null>(null);
 	const previewIframeRef = useRef<HTMLIFrameElement>(null);
 
 	const fetchAppDetails = useCallback(async () => {
@@ -144,6 +147,38 @@ export default function AppView() {
 	useEffect(() => {
 		fetchAppDetails();
 	}, [id, fetchAppDetails]);
+
+	// Mint an owner-preview token when the owner views their own PRIVATE deployed
+	// app, so the preview iframe / open-in-new-tab can reach the gated subdomain.
+	useEffect(() => {
+		let cancelled = false;
+		const needsToken =
+			!!app &&
+			!!user &&
+			app.userId === user.id &&
+			app.visibility === 'private' &&
+			!!app.deploymentId;
+
+		if (!needsToken) {
+			setOwnerPreviewUrl(null);
+			return;
+		}
+
+		(async () => {
+			try {
+				const response = await apiClient.generatePreviewToken(app!.id);
+				if (!cancelled && response.success && response.data) {
+					setOwnerPreviewUrl(response.data.previewUrl);
+				}
+			} catch (err) {
+				console.error('Failed to generate owner preview token:', err);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [app, user]);
 
 
 	// Convert agent files to chat FileType format
@@ -380,7 +415,9 @@ export default function AppView() {
 	};
 
 	const getAppUrl = () => {
-		return app?.cloudflareUrl || app?.previewUrl || '';
+		// Prefer the tokenized owner-preview URL for a private deployed app the
+		// owner is viewing; otherwise the plain deployed/preview URL.
+		return ownerPreviewUrl || app?.cloudflareUrl || app?.previewUrl || '';
 	};
 
 	const handlePreviewDeploy = async () => {
@@ -741,7 +778,7 @@ export default function AppView() {
 						>
 							<Eye className={cn(
 								"h-3.5 w-3.5 mr-1.5",
-								activeTab === 'preview' ? 'text-accent' : 'text-accent/60'
+								activeTab === 'preview' ? 'text-brand' : 'text-brand/60'
 							)} />
 							Preview
 						</TabsTrigger>
@@ -751,7 +788,7 @@ export default function AppView() {
 						>
 							<Code2 className={cn(
 								"h-3.5 w-3.5 mr-1.5",
-								activeTab === 'code' ? 'text-accent' : 'text-accent/60'
+								activeTab === 'code' ? 'text-brand' : 'text-brand/60'
 							)} />
 							Code
 						</TabsTrigger>
@@ -761,7 +798,7 @@ export default function AppView() {
 						>
 							<MessageSquare className={cn(
 								"h-3.5 w-3.5 mr-1.5",
-								activeTab === 'prompt' ? 'text-accent' : 'text-accent/60'
+								activeTab === 'prompt' ? 'text-brand' : 'text-brand/60'
 							)} />
 							Prompt
 						</TabsTrigger>
@@ -1042,8 +1079,8 @@ export default function AppView() {
 									<div className="bg-bg-2 rounded-lg p-6 border border-border-primary">
 										<div className="flex items-start gap-3">
 											<div className="flex-shrink-0 mt-1">
-												<div className="rounded-full bg-accent/10 p-2">
-													<MessageSquare className="h-4 w-4 text-accent" />
+												<div className="rounded-full bg-brand/10 p-2">
+													<MessageSquare className="h-4 w-4 text-brand" />
 												</div>
 											</div>
 											<div className="flex-1">

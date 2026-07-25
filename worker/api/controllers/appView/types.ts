@@ -4,7 +4,7 @@
  */
 
 import { AgentSummary } from '../../../agents/core/types';
-import { EnhancedAppData } from '../../../database/types';
+import { PublicAppDetailData } from '../../../database/types';
 
 /**
  * Generated code file structure
@@ -16,10 +16,11 @@ export interface GeneratedCodeFile {
 }
 
 /**
- * Response data for getAppDetails - extends existing EnhancedAppData
- * Adds only fields unique to app view response, uses EnhancedAppData stats directly
+ * Response data for getAppDetails - extends the safe public detail projection.
+ * Adds only fields unique to app view response; owner-only fields (userId,
+ * deploymentId) are optional and populated only when the viewer owns the app.
  */
-export interface AppDetailsData extends EnhancedAppData {
+export interface AppDetailsData extends PublicAppDetailData {
     cloudflareUrl: string | null;
     previewUrl: string | null;
     user: {
@@ -46,6 +47,18 @@ export interface GitCloneTokenData {
     expiresIn: number;
     expiresAt: string;
     cloneUrl: string;
+}
+
+/**
+ * Response data for owner-preview token generation. Lets the owner open a
+ * private deployed app's URL on a preview subdomain.
+ */
+export interface PreviewTokenData {
+    token: string;
+    expiresIn: number;
+    expiresAt: string;
+    /** Deployment URL with the owner-preview token appended. */
+    previewUrl: string;
 }
 
 // /**

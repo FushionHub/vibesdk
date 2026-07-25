@@ -62,12 +62,25 @@ interface DeploymentRow {
 // The host worker calls methods via DO RPC (same worker, no HTTP).
 // External git clients can use Smart HTTP via the forwarded routes.
 
+// Built asset manifest + in-memory storage for a single deployment. Rebuilding
+// these on every request is wasteful (CWE-770 amplification under a preview
+// flood), so we cache them per `branch:commitHash` with an LRU + TTL bound.
+type CachedAssets = {
+  manifest: Awaited<ReturnType<typeof buildAssetManifest>>
+  storage: ReturnType<typeof createMemoryStorage>
+  expiresAt: number
+}
+const ASSET_CACHE_MAX_ENTRIES = 8
+const ASSET_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
 export class SpaceDO extends DurableObject<Env> {
   private workspace: Workspace
   private fs: WorkspaceFileSystem
   private git: Git
   private stateBackend: FileSystemStateBackend
   private initialized = false
+  // Keyed by `${branch}:${commitHash}` — commitHash makes redeploys self-invalidate.
+  private assetCache = new Map<string, CachedAssets>()
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -407,10 +420,11 @@ export class SpaceDO extends DurableObject<Env> {
       return new Response(`No deployment found for branch "${branch}"`, { status: 404 })
     }
 
-    // Serve static assets host-side before forwarding to the Facet.
+    // Serve static assets host-side before forwarding to the Facet. The built
+    // manifest/storage are cached per deployment so repeat asset reads don't
+    // re-spin the build on every request.
     if (Object.keys(dep.assets).length > 0) {
-      const manifest = await buildAssetManifest(dep.assets)
-      const storage = createMemoryStorage(dep.assets)
+      const { manifest, storage } = await this.getCachedAssets(dep)
       const assetResponse = await handleAssetRequest(request, manifest, storage, dep.assetConfig)
       if (assetResponse) return assetResponse
     }
@@ -427,6 +441,42 @@ export class SpaceDO extends DurableObject<Env> {
 
     const facet = this.ctx.facets.get(facetNameForApp(branch), () => ({ class: appClass }))
     return facet.fetch(request)
+  }
+
+  /**
+   * Return the built asset manifest + in-memory storage for a deployment,
+   * reusing a cached build when available. Keyed by `branch:commitHash` so a
+   * redeploy (new commit) transparently rebuilds. Bounded by an LRU cap + TTL.
+   */
+  private async getCachedAssets(dep: DeploymentRow): Promise<CachedAssets> {
+    const key = `${dep.branch}:${dep.commitHash}`
+    const now = Date.now()
+
+    const cached = this.assetCache.get(key)
+    if (cached && cached.expiresAt > now) {
+      // Refresh LRU recency.
+      this.assetCache.delete(key)
+      this.assetCache.set(key, cached)
+      return cached
+    }
+
+    const manifest = await buildAssetManifest(dep.assets)
+    const storage = createMemoryStorage(dep.assets)
+    const entry: CachedAssets = { manifest, storage, expiresAt: now + ASSET_CACHE_TTL_MS }
+
+    this.assetCache.set(key, entry)
+
+    // Evict expired / oldest entries to keep the cache bounded.
+    for (const [k, v] of this.assetCache) {
+      if (v.expiresAt <= now) this.assetCache.delete(k)
+    }
+    while (this.assetCache.size > ASSET_CACHE_MAX_ENTRIES) {
+      const oldest = this.assetCache.keys().next().value
+      if (oldest === undefined) break
+      this.assetCache.delete(oldest)
+    }
+
+    return entry
   }
 
   // ── App-class loader ────────────────────────────────────────────

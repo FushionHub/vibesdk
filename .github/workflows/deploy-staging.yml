@@ -124,10 +124,11 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
           GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
+          CLOUDFLARE_OAUTH_CLIENT_ID: ${{ vars.STAGING_CLOUDFLARE_OAUTH_CLIENT_ID }}
+          CLOUDFLARE_OAUTH_CLIENT_SECRET: ${{ secrets.STAGING_CLOUDFLARE_OAUTH_CLIENT_SECRET }}
+          CF_OAUTH_ENCRYPTION_KEY: ${{ secrets.STAGING_CF_OAUTH_ENCRYPTION_KEY }}
 
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
-          SECRETS_ENCRYPTION_KEY: ${{ secrets.SECRETS_ENCRYPTION_KEY }}
+          JWT_SECRET: ${{ secrets.STAGING_JWT_SECRET }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           AI_PROXY_JWT_SECRET: ${{ secrets.AI_PROXY_JWT_SECRET }}
         run: bun scripts/deploy.ts

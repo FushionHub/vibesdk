@@ -15,6 +15,7 @@ import type{
 	AppDetailsData,
 	AppStarToggleData,
 	GitCloneTokenData,
+	PreviewTokenData,
 	UserAppsData,
 	ProfileUpdateData,
 	UserStatsData,
@@ -44,6 +45,7 @@ import type{
 	App,
 	ActiveSessionsData,
 	ApiKeysData,
+	LinkedIdentitiesData,
 	LoginResponseData,
 	RegisterResponseData,
 	ProfileResponseData,
@@ -558,6 +560,18 @@ class ApiClient {
 		appId: string,
 	): Promise<ApiResponse<GitCloneTokenData>> {
 		return this.request<GitCloneTokenData>(`/api/apps/${appId}/git/token`, {
+			method: 'POST',
+		});
+	}
+
+	/**
+	 * Generate a short-lived owner-preview token so the owner can open a
+	 * private deployed app's URL on a preview subdomain.
+	 */
+	async generatePreviewToken(
+		appId: string,
+	): Promise<ApiResponse<PreviewTokenData>> {
+		return this.request<PreviewTokenData>(`/api/apps/${appId}/preview-token`, {
 			method: 'POST',
 		});
 	}
@@ -1282,6 +1296,38 @@ class ApiClient {
 		window.location.href = oauthUrl.toString();
 	}
 
+	/**
+	 * Get the current user's linked OAuth identities
+	 */
+	async getLinkedIdentities(): Promise<ApiResponse<LinkedIdentitiesData>> {
+		return this.request<LinkedIdentitiesData>('/api/auth/identities');
+	}
+
+	/**
+	 * Unlink an OAuth provider from the current user
+	 */
+	async unlinkProvider(
+		provider: OAuthProvider,
+	): Promise<ApiResponse<{ message: string }>> {
+		return this.request<{ message: string }>(
+			`/api/auth/identities/${provider}`,
+			{
+				method: 'DELETE',
+			},
+		);
+	}
+
+	/**
+	 * Initiate an authenticated account-link flow (redirects to provider)
+	 */
+	initiateProviderLink(provider: OAuthProvider): void {
+		const linkUrl = new URL(
+			`/api/auth/link/${provider}`,
+			window.location.origin,
+		);
+		window.location.href = linkUrl.toString();
+	}
+
 	// ===============================
 	// Usage Limits API Methods
 	// ===============================
@@ -1314,6 +1360,23 @@ class ApiClient {
 	async disconnectCloudflare(): Promise<ApiResponse<{ message: string }>> {
 		return this.request<{ message: string }>('/api/cloudflare/connection', {
 			method: 'DELETE',
+		});
+	}
+
+	/**
+	 * Get the user's resolved AI Gateway usage preference.
+	 */
+	async getAiGatewayPreference(): Promise<ApiResponse<{ enabled: boolean; isExplicit: boolean }>> {
+		return this.request<{ enabled: boolean; isExplicit: boolean }>('/api/cloudflare/ai-gateway-preference');
+	}
+
+	/**
+	 * Set whether the user's own AI Gateway is used for inference.
+	 */
+	async setAiGatewayPreference(enabled: boolean): Promise<ApiResponse<{ enabled: boolean; isExplicit: boolean }>> {
+		return this.request<{ enabled: boolean; isExplicit: boolean }>('/api/cloudflare/ai-gateway-preference', {
+			method: 'PUT',
+			body: { enabled },
 		});
 	}
 }
