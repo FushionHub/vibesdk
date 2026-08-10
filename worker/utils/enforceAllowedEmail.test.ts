@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { enforceAllowedEmail } from './authUtils';
-import { SecurityError } from 'shared/types/errors';
+type AuthEnv = Parameters<typeof enforceAllowedEmail>[0];
+type SecurityErrorLike = { statusCode: number; message: string };
 
-const envWith = (allowed: string) => ({ ALLOWED_EMAIL: allowed }) as unknown as Env;
+const envWith = (allowed: string) => ({ ALLOWED_EMAIL: allowed }) as AuthEnv;
 
 describe('enforceAllowedEmail', () => {
 	it('is a no-op when ALLOWED_EMAIL is unset', () => {
+		expect(() => enforceAllowedEmail({} as AuthEnv, 'anyone@example.com', 'oauth')).not.toThrow();
+	});
+
+	it('is a no-op when ALLOWED_EMAIL is empty', () => {
 		expect(() => enforceAllowedEmail(envWith(''), 'anyone@example.com', 'oauth')).not.toThrow();
 	});
 
@@ -26,9 +31,9 @@ describe('enforceAllowedEmail', () => {
 			enforceAllowedEmail(envWith('staff@cloudflare.com'), 'attacker@example.com', 'oauth');
 			throw new Error('expected enforceAllowedEmail to throw');
 		} catch (error) {
-			expect(error).toBeInstanceOf(SecurityError);
-			expect((error as SecurityError).statusCode).toBe(403);
-			expect((error as SecurityError).message).toContain('to oauth');
+			expect(error).toMatchObject({ name: 'SecurityError', statusCode: 403 });
+			expect((error as SecurityErrorLike).statusCode).toBe(403);
+			expect((error as SecurityErrorLike).message).toContain('to oauth');
 		}
 	});
 
@@ -37,7 +42,7 @@ describe('enforceAllowedEmail', () => {
 			enforceAllowedEmail(envWith('staff@cloudflare.com'), 'attacker@example.com', 'register');
 			throw new Error('expected enforceAllowedEmail to throw');
 		} catch (error) {
-			expect((error as SecurityError).message).toContain('to register');
+			expect((error as SecurityErrorLike).message).toContain('to register');
 		}
 	});
 });

@@ -2,6 +2,11 @@
 #CUSTOM_DOMAIN="your-domain.com" # Your custom domain for CORS
 #ENVIRONMENT="prod" # Options: dev, staging, prod
 
+# Feature flags
+# Cloudflare Artifacts filesystem backend for SpaceDO. This feature is in closed beta;
+# enable it only if Cloudflare has granted your account access.
+ENABLE_ARTIFACTS="false"
+
 # Cloudflare Credentials (Required for manual deployment via `bun run deploy`)
 # These are automatically provided when using "Deploy to Cloudflare" button
 # Get these from: https://dash.cloudflare.com/profile/api-tokens
@@ -14,7 +19,7 @@
 # Provider specific secrets:
 #ANTHROPIC_API_KEY=""
 #OPENAI_API_KEY=""
-GOOGLE_AI_STUDIO_API_KEY=""
+#GOOGLE_AI_STUDIO_API_KEY=""
 #OPENROUTER_API_KEY="default" 
 #GROQ_API_KEY="default" 
  
@@ -31,7 +36,8 @@ GOOGLE_AI_STUDIO_API_KEY=""
 # GITHUB_EXPORTER_CLIENT_ID=""
 
 # Secrets for various internal services of this platform
-JWT_SECRET="" 
+# JWT_SECRET is generated automatically during Deploy to Cloudflare.
+#JWT_SECRET=""
 
 # AI Gateway URL Override (Leave as-is if not going to set it)
 #CLOUDFLARE_AI_GATEWAY_URL=""
