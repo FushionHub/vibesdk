@@ -338,6 +338,7 @@ function ChatSession() {
 		| 'terminal'
 		| 'presentation'
 		| 'database'
+		| 'repo'
 	>('editor');
 
 	// Terminal state
@@ -408,7 +409,7 @@ function ChatSession() {
 								<Button
 									variant="ghost"
 									className="h-8 shrink-0 px-2 text-xs text-text-tertiary hover:bg-kumo-elevated hover:text-text-primary"
-									onClick={() => window.open(cloudflareDeploymentUrl, '_blank')}
+									onClick={() => window.open(cloudflareDeploymentUrl, '_blank', 'noopener,noreferrer')}
 								>
 									<ExternalLink className="size-3.5" />
 									View Live
@@ -656,7 +657,8 @@ function ChatSession() {
 				| 'docs'
 				| 'blueprint'
 				| 'presentation'
-				| 'database',
+				| 'database'
+				| 'repo',
 		) => {
 			setView(mode);
 		},
@@ -1440,6 +1442,11 @@ function ChatSession() {
 									agentId={chatId}
 									databaseAvailable={
 										behaviorType === 'think' && !!chatId
+									}
+									repoAvailable={
+										behaviorType === 'think' &&
+										!!chatId &&
+										(capabilities?.artifacts ?? false)
 									}
 								/>
 							</motion.div>

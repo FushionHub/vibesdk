@@ -62,6 +62,7 @@ import type{
 	ListAppTablesResponse,
 	QueryAppTableResponse,
 	WipeAppDatabaseResponse,
+	ListAppBranchesResponse,
 } from '@/api-types';
 import {
 	RateLimitExceededError,
@@ -1072,6 +1073,18 @@ class ApiClient {
 	}
 
 	/**
+	 * List the branches of the app's workspace repo (for the Repo tab's
+	 * branch selector). Read-only.
+	 */
+	async listAppBranches(
+		agentId: string,
+	): Promise<ApiResponse<ListAppBranchesResponse>> {
+		return this.request<ListAppBranchesResponse>(
+			`/api/agent/${agentId}/branches`,
+		);
+	}
+
+	/**
 	 * Read rows from a table inside the App's DO. Paginated, read-only.
 	 */
 	async queryAppTable(
@@ -1220,34 +1233,6 @@ class ApiClient {
 			method: 'POST',
 			body: data,
 		});
-	}
-
-	/**
-	 * Verify email with OTP
-	 */
-	async verifyEmail(data: {
-		email: string;
-		otp: string;
-	}): Promise<ApiResponse<LoginResponseData>> {
-		return this.request<LoginResponseData>('/api/auth/verify-email', {
-			method: 'POST',
-			body: data,
-		});
-	}
-
-	/**
-	 * Resend verification OTP
-	 */
-	async resendVerificationOtp(
-		email: string,
-	): Promise<ApiResponse<{ message: string }>> {
-		return this.request<{ message: string }>(
-			'/api/auth/resend-verification',
-			{
-				method: 'POST',
-				body: { email },
-			},
-		);
 	}
 
 	/**
